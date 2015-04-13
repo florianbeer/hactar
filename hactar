@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+set -e
+
+##### SETTINGS #####
+RETAIN=30 			# Specify number of days to retain incremential backups here or as "-r NUM"
+EXCLUDE="/etc/hactar.excludes"	# Specify absolute path to exclude file here or as argument "-e FILENAME"
+
+# Shows usage infos
+function usage
+{
+    echo "Hactar - An incremential daily backup script using rsync"
+    echo "Copyright (c)2015 by Florian Beer | fb@42dev.eu"
+    echo "Version $VERSION"
+    echo ""
+    echo "This script comes with ABSOLUTELY NO WARRANTY."
+    echo "This is free software, and you are welcome to redistribute it"
+    echo "under certain conditions. See CC BY-NC-SA 4.0 for details." 
+    echo "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    echo ""
+    echo "Usage: `basename $0` [OPTIONS] SOURCE TARGET"
+    echo ""
+    echo "Options"
+    echo " -r NUM 		number of days to keep old backups"
+    echo " -e FILE		specify rsync excludes filename"
+    echo " -d			dry run"
+    echo " -v			increase verbosity"
+    echo " -h			show this message"
+    echo " -V			show version number"
+    echo ""
+    echo "Example"
+    echo " hactar -v -e my_exludes / /backup/"
+    echo ""
+    exit 0;
+}
+
+# Constants and defaults
+VERSION="0.1"
+START=$(date +%s.%N)
+TODAY=`date -I`
+YESTERDAY=`date -I -d "1 day ago"`
+LINKDEST=
+VERBOSE=
+DRYRUN=
+
+# Parse commandline arguments
+while [[ ${1:0:1} = "-" ]] ; do
+	N=1
+	L=${#1}
+	while [[ $N -lt $L ]] ; do
+		case ${1:$N:1} in
+			h)
+				usage
+				exit 0
+				;;
+			r)
+				if [[ $N -ne $(($L-1)) || ! -n ${2} ]] ; then
+					usage
+					exit 1
+				fi
+				RETAIN="${2}"
+				shift
+				;;
+			e)
+				if [[ $N -ne $(($L-1)) || ! -n ${2} ]] ; then
+					usage
+					exit 1
+				fi
+				EXCLUDE="${2}"
+				shift
+				;;
+			v)
+				VERBOSE="verbose"
+				;;
+			V)
+				echo "Hactar Version $VERSION"
+				exit 0
+				;;
+			d)	DRYRUN="dryrun"
+				;;
+			*)
+				echo ""
+				echo "Error: Unknown option: $1" >&2
+				echo ""
+				echo ""
+				usage
+				exit 1
+				;;
+			*)
+				usage
+				exit 1
+				;;
+		esac
+		N=$(($N+1))
+	done
+	shift
+done
+
+# Check if no arguments where given
+if [[ ! -n ${1} ]] ; then
+	usage
+	exit 1
+fi
+
+# Define source and target from last two arguments
+SOURCE=$1
+TARGET=$2
+
+# Do we show verbose output?
+if [ "$VERBOSE" = "verbose" ] ; then
+	OPT="--archive --one-file-system --hard-links --human-readable --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE --verbose --progress"
+else
+	OPT="--archive --one-file-system --hard-links --human-readable --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE"
+fi
+
+# Do we have a backup to hardlink against?
+if [ -d "$TARGET/$YESTERDAY" ] ; then
+	$LINKDEST="$TARGET/$YESTERDAY"
+fi
+
+# Dry run?
+if [ "$DRYRUN" = "dryrun" ] ; then
+	DRYRUN="-n"
+fi
+
+# Target directory is missing
+if [ "$2" = "" ] ; then
+	echo ""
+	echo "Error: Please specify target directory" >&2
+	echo ""
+	echo ""
+	usage
+	exit 1
+fi
+
+# Beginn backup and log via syslog
+logger -t hactar "Starting backup from \"$SOURCE\" to \"$TARGET\""
+rsync $OPT $LINKDEST $SOURCE $TARGET/$TODAY $DRYRUN
+
+# Delete oldest backup
+OLDEST=`date -I -d "$RETAIN days ago"`
+if [ -d $TARGET/$OLDEST ]; then
+	logger -t hactar "Deleting old backup from $OLDEST"
+	rm $TARGET/$OLDEST
+fi
+
+# Log script runtime
+END=$(date +%s.%N)
+RUNTIME=$(python -c "print '%u minutes %02u seconds' % ((${END} - ${START})/60, (${END} - ${START})%60)")
+logger -t hactar "Backup from \"$SOURCE\" to \"$TARGET\" took $RUNTIME"
+
+exit 0
