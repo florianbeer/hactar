@@ -2,19 +2,19 @@
 set -e
 
 ##### SETTINGS #####
-RETAIN=30 			# Specify number of days to retain incremential backups here or as "-r NUM"
+RETAIN=30 			# Specify number of days to retain incremental backups here or as "-r NUM"
 EXCLUDE="/etc/hactar.excludes"	# Specify absolute path to exclude file here or as argument "-e FILENAME"
 
 # Shows usage infos
 function usage
 {
-    echo "Hactar - An incremential daily backup script using rsync"
+    echo "Hactar - An incremental daily backup script using rsync"
     echo "Copyright (c)2015 by Florian Beer | fb@42dev.eu"
     echo "Version $VERSION"
     echo ""
     echo "This script comes with ABSOLUTELY NO WARRANTY."
     echo "This is free software, and you are welcome to redistribute it"
-    echo "under certain conditions. See CC BY-NC-SA 4.0 for details." 
+    echo "under certain conditions. See CC BY-NC-SA 4.0 for details."
     echo "https://creativecommons.org/licenses/by-nc-sa/4.0/"
     echo ""
     echo "Usage: `basename $0` [OPTIONS] SOURCE TARGET"
@@ -107,14 +107,12 @@ TARGET=$2
 
 # Do we show verbose output?
 if [ "$VERBOSE" = "verbose" ] ; then
-	OPT="--archive --one-file-system --hard-links --human-readable --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE --verbose --progress"
-else
-	OPT="--archive --one-file-system --hard-links --human-readable --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE"
+	VERBOSE=" --verbose --progress"
 fi
 
 # Do we have a backup to hardlink against?
 if [ -d "$TARGET/$YESTERDAY" ] ; then
-	$LINKDEST="$TARGET/$YESTERDAY"
+	LINKDEST="--link-dest=$TARGET/$YESTERDAY"
 fi
 
 # Dry run?
@@ -134,7 +132,9 @@ fi
 
 # Beginn backup and log via syslog
 logger -t hactar "Starting backup from \"$SOURCE\" to \"$TARGET\""
-rsync $OPT $LINKDEST $SOURCE $TARGET/$TODAY $DRYRUN
+rsync --archive --one-file-system --hard-links --human-readable \
+    --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE \
+    $LINKDEST $SOURCE $TARGET/$TODAY $DRYRUN $VERBOSE
 
 # Delete oldest backup
 OLDEST=`date -I -d "$RETAIN days ago"`

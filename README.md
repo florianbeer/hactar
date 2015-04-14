@@ -1,5 +1,5 @@
 # hactar
-An incremential daily backup script using rsync
+An incremental daily backup script using rsync
 
 Copyright (c)2015 by [Florian Beer](https://github.com/florianbeer)
 
