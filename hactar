@@ -34,7 +34,7 @@ function usage
 }
 
 # Constants and defaults
-VERSION="0.1"
+VERSION="0.11"
 START=$(date +%s.%N)
 TODAY=`date -I`
 YESTERDAY=`date -I -d "1 day ago"`
