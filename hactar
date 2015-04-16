@@ -1,151 +1,159 @@
 #!/usr/bin/env bash
+
+# Hactar - incremental daily rsync backup
+# Copyright (c) 2015 by Florian Beer <fb@42dev.eu>
+
 set -e
+declare -i RETAIN=30
+declare -r VERSION="1.0"
 
-##### SETTINGS #####
-RETAIN=30 			# Specify number of days to retain incremental backups here or as "-r NUM"
-EXCLUDE="/etc/hactar.excludes"	# Specify absolute path to exclude file here or as argument "-e FILENAME"
+usage() {
+cat <<EOM
 
-# Shows usage infos
-function usage
-{
-    echo "Hactar - An incremental daily backup script using rsync"
-    echo "Copyright (c)2015 by Florian Beer | fb@42dev.eu"
-    echo "Version $VERSION"
-    echo ""
-    echo "This script comes with ABSOLUTELY NO WARRANTY."
-    echo "This is free software, and you are welcome to redistribute it"
-    echo "under certain conditions. See CC BY-NC-SA 4.0 for details."
-    echo "https://creativecommons.org/licenses/by-nc-sa/4.0/"
-    echo ""
-    echo "Usage: `basename $0` [OPTIONS] SOURCE TARGET"
-    echo ""
-    echo "Options"
-    echo " -r NUM 		number of days to keep old backups"
-    echo " -e FILE		specify rsync excludes filename"
-    echo " -d			dry run"
-    echo " -v			increase verbosity"
-    echo " -h			show this message"
-    echo " -V			show version number"
-    echo ""
-    echo "Example"
-    echo " hactar -v -e my_exludes / /backup/"
-    echo ""
-    exit 0;
+Hactar - An incremental daily backup script using rsync
+Copyright (c)2015 by Florian Beer <fb@42dev.eu>
+Version $VERSION
+
+This script comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions. See CC BY-NC-SA 4.0 for details.
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Usage
+ `basename $0` [OPTIONS] SOURCE TARGET
+
+Options
+ -r NUM 		number of days to keep old backups
+ -e FILE		specify (optional) rsync excludes filename
+ -d			dry run
+ -v			increase verbosity
+ -h			show this message
+ -V			show version number
+
+Example
+ hactar -v -e my_exludes / /backup/
+
+EOM
 }
 
-# Constants and defaults
-VERSION="0.11"
-START=$(date +%s.%N)
-TODAY=`date -I`
-YESTERDAY=`date -I -d "1 day ago"`
-LINKDEST=
-VERBOSE=
-DRYRUN=
-
-# Parse commandline arguments
-while [[ ${1:0:1} = "-" ]] ; do
-	N=1
-	L=${#1}
-	while [[ $N -lt $L ]] ; do
-		case ${1:$N:1} in
-			h)
-				usage
-				exit 0
-				;;
-			r)
-				if [[ $N -ne $(($L-1)) || ! -n ${2} ]] ; then
+parse_commandline_arguments() {
+	while [[ ${1:0:1} = "-" ]] ; do
+		local n=1
+		local l=${#1}
+		while [[ $n -lt $l ]] ; do
+			case ${1:$n:1} in
+				h)
 					usage
-					exit 1
-				fi
-				RETAIN="${2}"
-				shift
-				;;
-			e)
-				if [[ $N -ne $(($L-1)) || ! -n ${2} ]] ; then
-					usage
-					exit 1
-				fi
-				EXCLUDE="${2}"
-				shift
-				;;
-			v)
-				VERBOSE="verbose"
-				;;
-			V)
-				echo "Hactar Version $VERSION"
-				exit 0
-				;;
-			d)	DRYRUN="dryrun"
-				;;
-			*)
-				echo ""
-				echo "Error: Unknown option: $1" >&2
-				echo ""
-				echo ""
-				usage
-				exit 1
-				;;
-			*)
-				usage
-				exit 1
-				;;
-		esac
-		N=$(($N+1))
+					exit 0
+					;;
+				r)
+					if [[ $n -ne $(($l-1)) || ! -n ${2} ]]; then
+						usage
+						exit 1
+					fi
+					if [[ ${2} == ?(-)+([0-9]) ]]; then
+						RETAIN="${2}"
+					else
+						printf "Error: -r must be followed by an integer\n" >&2
+						exit 2
+					fi
+					shift
+					;;
+				e)
+					if [[ $n -ne $(($l-1)) || ! -n ${2} ]]; then
+						usage
+						exit 1
+					fi
+					if [[ -f $2 ]]; then
+						EXCLUDE="${2}"
+						shift
+					else
+						printf "Error: Excludes file \"%s\" not found\n" "${2}" >&2
+						exit 3
+					fi
+					;;
+				v)
+					VERBOSE="--verbose --progress"
+					;;
+				V)
+					printf "Hactar Version %s\n" "${VERSION}"
+					exit 0
+					;;
+				d)	DRYRUN="--dry-run"
+					;;
+				*)
+					printf "Error: Unknown option %s\n" "${1}" >&2
+					exit 4
+					;;
+			esac
+			n=$(($n+1))
+		done
+		shift
 	done
-	shift
-done
 
-# Check if no arguments where given
-if [[ ! -n ${1} ]] ; then
-	usage
-	exit 1
-fi
+	# No arguments where given
+	if [[ ! -n ${1} ]]; then
+		usage
+		exit 0
+	fi
 
-# Define source and target from last two arguments
-SOURCE=$1
-TARGET=$2
+	# Target directory is missing
+	if [[ ! -n ${2} ]]; then
+		printf "Error: Please specify target directory\n" >&2
+		exit 5
+	fi
 
-# Do we show verbose output?
-if [ "$VERBOSE" = "verbose" ] ; then
-	VERBOSE=" --verbose --progress"
-fi
+	# Define source and target directories
+	if [[ ! -d ${1} ]]; then
+		printf "Error: Source directory \"%s\" doesn't exist\n" "${1}" >&2
+		exit 6
+	fi
+	if [[ ! -d ${2} ]]; then
+		printf "Error: Target directory \"%s\" doesn't exist\n" "${2}" >&2
+		exit 7
+	fi
+	SOURCE="${1}"
+	TARGET="${2}"
+}
 
-# Do we have a backup to hardlink against?
-if [ -d "$TARGET/$YESTERDAY" ] ; then
-	LINKDEST="--link-dest=$TARGET/$YESTERDAY"
-fi
+run_backup() {
+	# Do we have a backup to hardlink against?
+	if [[ -d ${TARGET}/`date -I -d "1 day ago"` ]]; then
+		declare -r linkdest="--link-dest=${TARGET}/$(date -I -d "1 day ago")"
+	fi
 
-# Dry run?
-if [ "$DRYRUN" = "dryrun" ] ; then
-	DRYRUN="-n"
-fi
+	# Do we use a default excludes file?
+	if [[ -f "/etc/hactar.excludes" && $EXCLUDE = "" ]]; then
+		echo "default excludes"
+	fi
 
-# Target directory is missing
-if [ "$2" = "" ] ; then
-	echo ""
-	echo "Error: Please specify target directory" >&2
-	echo ""
-	echo ""
-	usage
-	exit 1
-fi
+	# Run rsync with passed parameters
+	rsync --archive --one-file-system --hard-links --human-readable \
+		--inplace --numeric-ids --delete --delete-excluded --exclude-from=${EXCLUDE} \
+		${linkdest} ${SOURCE} ${TARGET}/`date -I` ${DRYRUN} ${VERBOSE}
+}
 
-# Beginn backup and log via syslog
-logger -t hactar "Starting backup from \"$SOURCE\" to \"$TARGET\""
-rsync --archive --one-file-system --hard-links --human-readable \
-    --inplace --numeric-ids --delete --delete-excluded --exclude-from=$EXCLUDE \
-    $LINKDEST $SOURCE $TARGET/$TODAY $DRYRUN $VERBOSE
+delete_oldest_backup() {
+	declare -r oldest=`date -I -d "${RETAIN} days ago"`
+	if [ -d ${TARGET}/${oldest} ]; then
+		logger -t hactar "Deleting old backup from ${oldest}"
+		rm -r ${TARGET}/${oldest}
+	fi
+}
 
-# Delete oldest backup
-OLDEST=`date -I -d "$RETAIN days ago"`
-if [ -d $TARGET/$OLDEST ]; then
-	logger -t hactar "Deleting old backup from $OLDEST"
-	rm $TARGET/$OLDEST
-fi
+main() {
+	parse_commandline_arguments "$@"
 
-# Log script runtime
-END=$(date +%s.%N)
-RUNTIME=$(python -c "print '%u minutes %02u seconds' % ((${END} - ${START})/60, (${END} - ${START})%60)")
-logger -t hactar "Backup from \"$SOURCE\" to \"$TARGET\" took $RUNTIME"
+	declare -r start=$(date +%s)
+	logger -t hactar "Starting backup from \"${SOURCE}\" to \"${TARGET}\""
 
-exit 0
+	run_backup
+
+	delete_oldest_backup
+
+	declare -r end=$(date +%s)
+	declare -r runtime=$(python -c "print '%u minutes %02u seconds' % ((${end} - ${start})/60, (${end} - ${start})%60)")
+	logger -t hactar "Backup from \"${SOURCE}\" to \"${TARGET}\" took ${runtime}"
+}
+
+main "$@"

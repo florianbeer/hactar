@@ -3,7 +3,7 @@ An incremental daily backup script using rsync
 
 Copyright (c)2015 by [Florian Beer](https://github.com/florianbeer)
 
-Version 0.11
+Version 1.0
 
 
 This script comes with ABSOLUTELY NO WARRANTY.
@@ -40,7 +40,7 @@ Source or target can be a remote directory (via SSH) or a local path. See `rsync
 ## Usage
 * Save this shell script to e.g. `/usr/local/bin/hactar` and make it executable: `chmod +x /usr/local/bin/hactar`
 
-* Create a new file called `/etc/hactar.excludes`and list all directories and/or filtermaps you don't need in your backup (see `rsync` manpage for details).
+* Optionally, create a new file called `/etc/hactar.excludes`and list all directories and/or filtermaps you don't need in your backup (see `rsync` manpage for details).
 My excludes contents:
 ```
 /backup
