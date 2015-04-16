@@ -103,15 +103,6 @@ parse_commandline_arguments() {
 		exit 5
 	fi
 
-	# Define source and target directories
-	if [[ ! -d ${1} ]]; then
-		printf "Error: Source directory \"%s\" doesn't exist\n" "${1}" >&2
-		exit 6
-	fi
-	if [[ ! -d ${2} ]]; then
-		printf "Error: Target directory \"%s\" doesn't exist\n" "${2}" >&2
-		exit 7
-	fi
 	SOURCE="${1}"
 	TARGET="${2}"
 }
