@@ -136,7 +136,7 @@ main() {
 	parse_commandline_arguments "$@"
 
 	declare -r start=$(date +%s)
-	logger -t hactar "Starting backup from \"${SOURCE}\" to \"${TARGET}\"`date -I"
+	logger -t hactar "Starting backup from \"${SOURCE}\" to \"${TARGET}`date -I`\""
 
 	run_backup
 
@@ -144,7 +144,7 @@ main() {
 
 	declare -r end=$(date +%s)
 	declare -r runtime=$(python -c "print '%u minutes %02u seconds' % ((${end} - ${start})/60, (${end} - ${start})%60)")
-	logger -t hactar "Backup from \"${SOURCE}\" to \"${TARGET}\"`date -I took ${runtime}"
+	logger -t hactar "Backup from \"${SOURCE}\" to \"${TARGET}`date -I`\" took ${runtime}"
 }
 
 main "$@"
